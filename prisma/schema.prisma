@@ -1,0 +1,185 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  role      String   // ADMIN, EMPLOYEE, STUDENT
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  employee  Employee?
+  student   Student?
+}
+
+model Department {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  deanId    Int?
+  dean      Employee? @relation("DepartmentDean", fields: [deanId], references: [id], onDelete: SetNull)
+  
+  employees Employee[] @relation("DepartmentEmployees")
+  students  Student[]
+  courses   Course[]
+}
+
+model Employee {
+  id            Int        @id @default(autoincrement())
+  firstName     String
+  lastName      String
+  email         String     @unique
+  phone         String?
+  hireDate      DateTime   @default(now())
+  jobTitle      String
+  staffType     String     // TEACHER, ADMIN, HELP
+  salary        Float
+  departmentId  Int?
+  department    Department? @relation("DepartmentEmployees", fields: [departmentId], references: [id], onDelete: Cascade)
+  userId        Int?       @unique
+  user          User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  deanOf        Department[] @relation("DepartmentDean")
+  schedules     Schedule[]
+}
+
+model Student {
+  id              Int        @id @default(autoincrement())
+  firstName       String
+  lastName        String
+  email           String     @unique
+  phone           String?
+  address         String?
+  birthDate       DateTime
+  enrollmentDate  DateTime   @default(now())
+  gpa             Float      @default(0.0)
+  departmentId    Int?
+  department      Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  userId          Int?       @unique
+  user          User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  enrollments     Enrollment[]
+  fees            Fee[]
+  scholarships    Scholarship[]
+}
+
+model Course {
+  id            Int        @id @default(autoincrement())
+  name          String
+  creditHours   Int
+  departmentId  Int?
+  department    Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+
+  schedules     Schedule[]
+}
+
+model Room {
+  id          Int      @id @default(autoincrement())
+  roomNumber  String   @unique
+  building    String
+  capacity    Int
+  roomType    String   // CLASSROOM, LAB, OFFICE
+
+  schedules   Schedule[]
+  exams       Exam[]
+}
+
+model Semester {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique // Fall 2025, Spring 2026
+  startDate DateTime
+  endDate   DateTime
+
+  schedules Schedule[]
+  fees      Fee[]
+}
+
+model Schedule {
+  id          Int      @id @default(autoincrement())
+  dayOfWeek   String   // MONDAY, TUESDAY, etc.
+  startTime   String   // HH:mm
+  endTime     String   // HH:mm
+  courseId    Int
+  employeeId  Int      // Teacher
+  roomId      Int
+  semesterId  Int
+
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  teacher     Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  room        Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  semester    Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+
+  enrollments Enrollment[]
+  exams       Exam[]
+}
+
+model Enrollment {
+  id          Int      @id @default(autoincrement())
+  grade       Float?
+  status      String   @default("ACTIVE") // ACTIVE, DROPPED, COMPLETED
+  studentId   Int
+  scheduleId  Int
+
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  schedule    Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+
+  attendances Attendance[]
+
+  @@unique([studentId, scheduleId])
+}
+
+model Exam {
+  id          Int      @id @default(autoincrement())
+  examDate    DateTime
+  startTime   String
+  examType    String   // MIDTERM, FINAL, QUIZ
+  scheduleId  Int
+  roomId      Int
+
+  schedule    Schedule @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  room        Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+}
+
+model Fee {
+  id          Int      @id @default(autoincrement())
+  amount      Float
+  paidAmount  Float    @default(0.0)
+  dueDate     DateTime
+  status      String   @default("UNPAID") // PAID, PARTIAL, UNPAID
+  studentId   Int
+  semesterId  Int
+
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  semester    Semester @relation(fields: [semesterId], references: [id], onDelete: Cascade)
+}
+
+model Scholarship {
+  id              Int      @id @default(autoincrement())
+  name            String
+  amount          Float
+  startDate       DateTime
+  endDate         DateTime
+  studentId       Int
+
+  student         Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+}
+
+model Attendance {
+  id            Int        @id @default(autoincrement())
+  date          DateTime
+  status        String     // PRESENT, ABSENT, LATE, EXCUSED
+  enrollmentId  Int
+
+  enrollment    Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+}

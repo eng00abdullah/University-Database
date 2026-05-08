@@ -1,0 +1,6 @@
+{
+  "name": "UniSphere ERP",
+  "description": "A premium, full-stack university management platform with role-based auth, academic scheduling, and financial analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["Dashboard", "Academic Management", "Student Lifecycle", "Financial Reporting"]
+}
