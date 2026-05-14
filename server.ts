@@ -23,6 +23,35 @@ async function startServer() {
   app.use(morgan("dev"));
   app.use(express.json());
 
+  // --- Middleware ---
+
+  const authenticate = (req: any, res: any, next: any) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.split(" ")[1];
+    if (!token) {
+      console.log("Auth failed: No token provided");
+      return res.status(401).json({ message: "Access denied" });
+    }
+
+    try {
+      const verified = jwt.verify(token, JWT_SECRET);
+      req.user = verified;
+      next();
+    } catch (error: any) {
+      console.log("Auth failed: Invalid token", error.message);
+      res.status(401).json({ message: "Invalid token" });
+    }
+  };
+
+  const authorize = (roles: string[]) => {
+    return (req: any, res: any, next: any) => {
+      if (!roles.includes(req.user.role)) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission" });
+      }
+      next();
+    };
+  };
+
   // --- API Routes ---
 
   // Auth
@@ -84,7 +113,7 @@ async function startServer() {
   });
 
   // Departments
-  app.get("/api/departments", async (req, res) => {
+  app.get("/api/departments", authenticate, async (req, res) => {
     try {
       const departments = await prisma.department.findMany({
         include: { dean: true, _count: { select: { employees: true, students: true } } },
@@ -96,7 +125,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/departments", async (req, res) => {
+  app.post("/api/departments", authenticate, authorize(["ADMIN"]), async (req, res) => {
     const { name, deanId } = req.body;
     try {
       const dept = await prisma.department.create({
@@ -104,14 +133,25 @@ async function startServer() {
       });
       res.json(dept);
     } catch (error: any) {
+      console.error("Create department error:", error);
+      if (error.code === 'P2002') {
+        return res.status(400).json({ message: "A department with this name already exists" });
+      }
       res.status(400).json({ message: error.message });
     }
   });
 
   // Students
-  app.get("/api/students", async (req, res) => {
+  app.get("/api/students", authenticate, authorize(["ADMIN", "ADMISSION", "DEAN", "STUDENT"]), async (req: any, res: any) => {
     try {
+      const { role, id: userId } = req.user;
+      const where: any = {};
+      if (role === "STUDENT") {
+        where.userId = userId;
+      }
+
       const students = await prisma.student.findMany({
+        where,
         include: { department: true },
       });
       res.json(students);
@@ -121,7 +161,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/students", async (req, res) => {
+  app.post("/api/students", authenticate, authorize(["ADMIN", "ADMISSION"]), async (req, res) => {
     try {
       console.log("[POST] Creating student with data:", req.body);
       const { departmentId, ...rest } = req.body;
@@ -140,7 +180,7 @@ async function startServer() {
   });
 
   // Employees
-  app.get("/api/employees", async (req, res) => {
+  app.get("/api/employees", authenticate, authorize(["ADMIN", "DEAN"]), async (req, res) => {
     try {
       const employees = await prisma.employee.findMany({
         include: { department: true },
@@ -152,25 +192,29 @@ async function startServer() {
     }
   });
 
-  app.post("/api/employees", async (req, res) => {
+  app.post("/api/employees", authenticate, authorize(["ADMIN"]), async (req, res) => {
     try {
       const { departmentId, ...rest } = req.body;
       const employee = await prisma.employee.create({
         data: {
           ...rest,
-          salary: parseFloat(rest.salary),
+          salary: parseFloat(rest.salary || "0"),
           departmentId: departmentId ? parseInt(departmentId) : null,
           hireDate: rest.hireDate ? new Date(rest.hireDate) : new Date(),
         },
       });
       res.json(employee);
     } catch (error: any) {
+      console.error("Create employee error:", error);
+      if (error.code === 'P2002') {
+        return res.status(400).json({ message: "An employee with this email already exists" });
+      }
       res.status(400).json({ message: error.message });
     }
   });
 
   // Courses
-  app.get("/api/courses", async (req, res) => {
+  app.get("/api/courses", authenticate, async (req, res) => {
     try {
       const courses = await prisma.course.findMany({ include: { department: true } });
       res.json(courses);
@@ -180,7 +224,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/courses", async (req, res) => {
+  app.post("/api/courses", authenticate, authorize(["ADMIN", "DEAN"]), async (req, res) => {
     try {
       const { departmentId, ...rest } = req.body;
       const course = await prisma.course.create({
@@ -197,18 +241,18 @@ async function startServer() {
   });
 
   // Rooms
-  app.get("/api/rooms", async (req, res) => {
+  app.get("/api/rooms", authenticate, authorize(["ADMIN", "ADMISSION", "DEAN", "TEACHER"]), async (req, res) => {
     const rooms = await prisma.room.findMany();
     res.json(rooms);
   });
 
   // Semesters
-  app.get("/api/semesters", async (req, res) => {
+  app.get("/api/semesters", authenticate, async (req, res) => {
     const semesters = await prisma.semester.findMany();
     res.json(semesters);
   });
 
-  app.post("/api/semesters", async (req, res) => {
+  app.post("/api/semesters", authenticate, authorize(["ADMIN"]), async (req, res) => {
     try {
       const semester = await prisma.semester.create({ data: req.body });
       res.json(semester);
@@ -218,14 +262,25 @@ async function startServer() {
   });
 
   // Enrollments
-  app.get("/api/enrollments", async (req, res) => {
-    const enrollments = await prisma.enrollment.findMany({
-      include: { student: true, schedule: { include: { course: true } } },
-    });
-    res.json(enrollments);
+  app.get("/api/enrollments", authenticate, authorize(["ADMIN", "ADMISSION", "DEAN", "TEACHER", "STUDENT"]), async (req: any, res: any) => {
+    try {
+      const { role, id: userId } = req.user;
+      const where: any = {};
+      if (role === "STUDENT") {
+        where.student = { userId };
+      }
+
+      const enrollments = await prisma.enrollment.findMany({
+        where,
+        include: { student: true, schedule: { include: { course: true } } },
+      });
+      res.json(enrollments);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
   });
 
-  app.post("/api/enrollments", async (req, res) => {
+  app.post("/api/enrollments", authenticate, authorize(["ADMIN", "ADMISSION"]), async (req, res) => {
     try {
       const enrollment = await prisma.enrollment.create({
         data: {
@@ -241,11 +296,18 @@ async function startServer() {
   });
 
   // Attendance
-  app.get("/api/attendance", async (req, res) => {
+  app.get("/api/attendance", authenticate, authorize(["ADMIN", "ADMISSION", "DEAN", "TEACHER", "STUDENT"]), async (req: any, res: any) => {
     try {
+      const { role, id: userId } = req.user;
       const { scheduleId, date } = req.query;
       const where: any = {};
-      if (scheduleId) where.enrollment = { scheduleId: parseInt(scheduleId as string) };
+      
+      if (role === "STUDENT") {
+        where.enrollment = { student: { userId } };
+      } else if (scheduleId) {
+        where.enrollment = { scheduleId: parseInt(scheduleId as string) };
+      }
+
       if (date) {
         const startOfDay = new Date(date as string);
         startOfDay.setHours(0, 0, 0, 0);
@@ -255,7 +317,7 @@ async function startServer() {
       }
 
       const attendance = await prisma.attendance.findMany({
-        include: { enrollment: { include: { student: true } } },
+        include: { enrollment: { include: { student: true, schedule: { include: { course: true } } } } },
         where,
       });
       res.json(attendance);
@@ -265,7 +327,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/attendance", async (req, res) => {
+  app.post("/api/attendance", authenticate, authorize(["ADMIN", "TEACHER"]), async (req, res) => {
     try {
       const { records } = req.body; // Array of { enrollmentId, status, date }
       const results = await prisma.$transaction(
@@ -296,9 +358,17 @@ async function startServer() {
   });
 
   // Fees
-  app.get("/api/fees", async (req, res) => {
+  app.get("/api/fees", authenticate, authorize(["ADMIN", "ADMISSION", "DEAN", "STUDENT"]), async (req: any, res: any) => {
     try {
+      const { role, id: userId } = req.user;
+      const where: any = {};
+      
+      if (role === "STUDENT") {
+        where.student = { userId };
+      }
+
       const fees = await prisma.fee.findMany({
+        where,
         include: { student: true, semester: true },
       });
       res.json(fees);
@@ -308,7 +378,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/fees", async (req, res) => {
+  app.post("/api/fees", authenticate, authorize(["ADMIN", "ADMISSION"]), async (req, res) => {
     try {
       const fee = await prisma.fee.create({
         data: {
@@ -326,7 +396,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/fees/:id", async (req, res) => {
+  app.put("/api/fees/:id", authenticate, authorize(["ADMIN", "ADMISSION"]), async (req, res) => {
     try {
       const fee = await prisma.fee.update({
         where: { id: parseInt(req.params.id) },
@@ -343,7 +413,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/fees/:id", async (req, res) => {
+  app.delete("/api/fees/:id", authenticate, authorize(["ADMIN", "ADMISSION"]), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid fee ID" });
@@ -357,7 +427,7 @@ async function startServer() {
   });
 
   // Scholarships
-  app.get("/api/scholarships", async (req, res) => {
+  app.get("/api/scholarships", authenticate, authorize(["ADMIN", "ADMISSION", "DEAN"]), async (req, res) => {
     try {
       const scholarships = await prisma.scholarship.findMany({
         include: { student: true },
@@ -369,7 +439,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/scholarships", async (req, res) => {
+  app.post("/api/scholarships", authenticate, authorize(["ADMIN", "ADMISSION"]), async (req, res) => {
     try {
       const scholarship = await prisma.scholarship.create({
         data: {
@@ -386,7 +456,30 @@ async function startServer() {
     }
   });
 
-  app.put("/api/scholarships/:id", async (req, res) => {
+  // Orders / Checkout
+  app.post("/api/orders", async (req, res) => {
+    try {
+      const { fullName, email, address, city, country, postalCode, amount } = req.body;
+      const order = await prisma.order.create({
+        data: {
+          fullName,
+          email,
+          address,
+          city,
+          country,
+          postalCode,
+          amount: parseFloat(amount),
+          status: "PAID", // Assuming payment is immediate for this demo
+        },
+      });
+      res.json(order);
+    } catch (error: any) {
+      console.error("Order creation error:", error);
+      res.status(500).json({ message: "Failed to create order" });
+    }
+  });
+
+  app.put("/api/scholarships/:id", authenticate, authorize(["ADMIN", "ADMISSION"]), async (req, res) => {
     try {
       const scholarship = await prisma.scholarship.update({
         where: { id: parseInt(req.params.id) },
@@ -403,7 +496,7 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/scholarships/:id", async (req, res) => {
+  app.delete("/api/scholarships/:id", authenticate, authorize(["ADMIN", "ADMISSION"]), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid scholarship ID" });
@@ -417,7 +510,7 @@ async function startServer() {
   });
 
   // Delete Routes
-  app.delete("/api/students/:id", async (req, res) => {
+  app.delete("/api/students/:id", authenticate, authorize(["ADMIN", "ADMISSION"]), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid student ID" });
@@ -440,11 +533,14 @@ async function startServer() {
       res.json({ message: "Student deleted" });
     } catch (error: any) {
       console.error("Delete student error:", error);
+      if (error.code === 'P2025') {
+        return res.status(404).json({ message: "Student or associated user not found" });
+      }
       res.status(400).json({ message: error.message });
     }
   });
 
-  app.delete("/api/employees/:id", async (req, res) => {
+  app.delete("/api/employees/:id", authenticate, authorize(["ADMIN"]), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(400).json({ message: "Invalid employee ID" });
@@ -466,48 +562,63 @@ async function startServer() {
       res.json({ message: "Employee deleted" });
     } catch (error: any) {
       console.error("Delete employee error:", error);
+      if (error.code === 'P2025') {
+        return res.status(404).json({ message: "Employee or associated user not found" });
+      }
       res.status(400).json({ message: error.message });
     }
   });
 
-  app.delete("/api/courses/:id", async (req, res) => {
+  app.delete("/api/courses/:id", authenticate, authorize(["ADMIN", "DEAN"]), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid course ID" });
       console.log(`Deleting course ${id}`);
       await prisma.course.delete({ where: { id } });
       res.json({ message: "Course deleted" });
     } catch (error: any) {
       console.error("Delete course error:", error);
+      if (error.code === 'P2025') {
+        return res.status(404).json({ message: "Course not found" });
+      }
       res.status(400).json({ message: error.message });
     }
   });
 
-  app.delete("/api/departments/:id", async (req, res) => {
+  app.delete("/api/departments/:id", authenticate, authorize(["ADMIN"]), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid department ID" });
       console.log(`Deleting department ${id}`);
       await prisma.department.delete({ where: { id } });
       res.json({ message: "Department deleted" });
     } catch (error: any) {
       console.error("Delete department error:", error);
+      if (error.code === 'P2025') {
+        return res.status(404).json({ message: "Department not found" });
+      }
       res.status(400).json({ message: error.message });
     }
   });
 
-  app.delete("/api/schedules/:id", async (req, res) => {
+  app.delete("/api/schedules/:id", authenticate, authorize(["ADMIN", "DEAN"]), async (req, res) => {
     try {
       const id = parseInt(req.params.id);
+      if (isNaN(id)) return res.status(400).json({ message: "Invalid schedule ID" });
       console.log(`Deleting schedule slot ${id}`);
       await prisma.schedule.delete({ where: { id } });
       res.json({ message: "Schedule slot deleted" });
     } catch (error: any) {
       console.error("Delete schedule error:", error);
+      if (error.code === 'P2025') {
+        return res.status(404).json({ message: "Schedule slot not found" });
+      }
       res.status(400).json({ message: error.message });
     }
   });
 
   // Update Routes
-  app.put("/api/students/:id", async (req, res) => {
+  app.put("/api/students/:id", authenticate, authorize(["ADMIN", "ADMISSION", "DEAN"]), async (req, res) => {
     try {
       const { departmentId, ...rest } = req.body;
       const student = await prisma.student.update({
@@ -524,7 +635,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/employees/:id", async (req, res) => {
+  app.put("/api/employees/:id", authenticate, authorize(["ADMIN", "DEAN"]), async (req, res) => {
     try {
       const { departmentId, ...rest } = req.body;
       const employee = await prisma.employee.update({
@@ -541,7 +652,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/courses/:id", async (req, res) => {
+  app.put("/api/courses/:id", authenticate, authorize(["ADMIN", "DEAN"]), async (req, res) => {
     try {
       const { departmentId, ...rest } = req.body;
       const course = await prisma.course.update({
@@ -558,7 +669,7 @@ async function startServer() {
     }
   });
 
-  app.put("/api/departments/:id", async (req, res) => {
+  app.put("/api/departments/:id", authenticate, authorize(["ADMIN"]), async (req, res) => {
     try {
       const { name, deanId } = req.body;
       const dept = await prisma.department.update({
@@ -572,7 +683,7 @@ async function startServer() {
   });
 
   // Schedules
-  app.get("/api/schedules", async (req, res) => {
+  app.get("/api/schedules", authenticate, async (req, res) => {
     try {
       const schedules = await prisma.schedule.findMany({
         include: { 
@@ -589,7 +700,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/schedules", async (req, res) => {
+  app.post("/api/schedules", authenticate, authorize(["ADMIN", "DEAN"]), async (req, res) => {
     try {
       // Basic conflict check
       const { roomId, employeeId, dayOfWeek, startTime, endTime, semesterId } = req.body;
@@ -629,7 +740,7 @@ async function startServer() {
   });
 
   // Dashboard Stats
-  app.get("/api/stats", async (req, res) => {
+  app.get("/api/stats", authenticate, authorize(["ADMIN", "DEAN", "ADMISSION"]), async (req, res) => {
     try {
       const [students, employees, departmentsCount, courses, schedules, fees, departmentsDetails] = await Promise.all([
         prisma.student.count(),
@@ -663,7 +774,117 @@ async function startServer() {
     }
   });
 
-  // Vite middleware
+  // Dashboard Summary (Role-Aware)
+  app.get("/api/dashboard/summary", authenticate, async (req: any, res: any) => {
+    try {
+      const { role, id: userId, email } = req.user;
+
+      if (["ADMIN", "DEAN", "ADMISSION"].includes(role)) {
+        // High-level overview
+        const [totalStudents, totalEmployees, totalRevenue, activeCourses] = await Promise.all([
+          prisma.student.count(),
+          prisma.employee.count(),
+          prisma.fee.aggregate({ _sum: { paidAmount: true } }),
+          prisma.schedule.count({ where: { semester: { endDate: { gte: new Date() } } } }),
+        ]);
+
+        let departmentStats = null;
+        if (role === "DEAN") {
+          const dean = await prisma.employee.findFirst({ where: { userId } });
+          const dept = await prisma.department.findFirst({
+            where: { deanId: dean?.id },
+            include: { _count: { select: { students: true, courses: true } } }
+          });
+          departmentStats = dept;
+        }
+
+        return res.json({
+          overview: {
+            totalStudents,
+            totalEmployees,
+            totalRevenue: totalRevenue._sum.paidAmount || 0,
+            activeCourses
+          },
+          departmentStats
+        });
+      }
+
+      if (role === "TEACHER") {
+        const teacher = await prisma.employee.findFirst({
+          where: { userId },
+          include: {
+            schedules: {
+              include: {
+                course: true,
+                room: true,
+                semester: true,
+                enrollments: {
+                  include: { student: true }
+                }
+              }
+            }
+          }
+        });
+
+        if (!teacher) return res.status(404).json({ message: "Teacher record not found" });
+
+        return res.json({
+          teacher: {
+            name: `${teacher.firstName} ${teacher.lastName}`,
+            coursesCount: teacher.schedules.length,
+            upcomingClasses: teacher.schedules.slice(0, 5),
+          }
+        });
+      }
+
+      if (role === "STUDENT") {
+        const student = await prisma.student.findFirst({
+          where: { userId },
+          include: {
+            enrollments: {
+              include: {
+                schedule: {
+                  include: { course: true, teacher: true, room: true }
+                }
+              }
+            },
+            fees: {
+              include: { semester: true }
+            }
+          }
+        });
+
+        if (!student) return res.status(404).json({ message: "Student record not found" });
+
+        return res.json({
+          student: {
+            gpa: student.gpa,
+            courses: student.enrollments.map(e => ({
+              id: e.schedule.course.id,
+              name: e.schedule.course.name,
+              teacher: `${e.schedule.teacher.firstName} ${e.schedule.teacher.lastName}`,
+              room: e.schedule.room.roomNumber,
+              grade: e.grade
+            })),
+            financialStatus: student.fees[0]?.status || "N/A"
+          }
+        });
+      }
+
+      res.status(400).json({ message: "Unsupported role for dashboard" });
+    } catch (error: any) {
+      console.error("Dashboard summary error:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Health check
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString(), env: process.env.NODE_ENV || 'development' });
+  });
+
+  // --- Vite / Static Files ---
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -675,13 +896,28 @@ async function startServer() {
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       // For any request that doesn't match an API route or a static file, serve index.html
-      if (!req.path.startsWith('/api')) {
-        res.sendFile(path.join(distPath, "index.html"));
-      } else {
-        res.status(404).json({ message: "API route not found" });
+      if (req.path.startsWith('/api')) {
+        return res.status(404).json({ 
+          message: `API route not found: ${req.method} ${req.path}`,
+          error: "404 Not Found"
+        });
       }
+      res.sendFile(path.join(distPath, "index.html"));
     });
   }
+
+  // Final catch-all for anything missed (notably non-GET API calls)
+  app.use((req, res) => {
+    if (req.path.startsWith('/api')) {
+      console.warn(`404 Unhandled: ${req.method} ${req.path}`);
+      return res.status(404).json({ 
+        message: `API endpoint matching this ${req.method} request not found: ${req.path}`,
+        error: "404 Not Found"
+      });
+    }
+    // For non-API routes in dev if vite missed it somehow
+    res.status(404).send("Page not found");
+  });
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);

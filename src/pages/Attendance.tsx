@@ -32,30 +32,48 @@ interface AttendanceRecord {
   studentName: string;
 }
 
-export default function Attendance() {
+export default function Attendance({ user }: { user: any }) {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [selectedScheduleId, setSelectedScheduleId] = useState<number | ''>('');
   const [date, setDate] = useState(format(new Date(), 'yyyy-MM-dd'));
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const [studentRecords, setStudentRecords] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    fetchSchedules();
-  }, []);
+  const isStudent = user?.role === 'STUDENT';
 
   useEffect(() => {
-    if (selectedScheduleId && date) {
-      fetchAttendance();
+    if (isStudent) {
+      fetchStudentAttendance();
     } else {
+      fetchSchedules();
+    }
+  }, [isStudent]);
+
+  useEffect(() => {
+    if (!isStudent && selectedScheduleId && date) {
+      fetchAttendance();
+    } else if (!isStudent) {
       setRecords([]);
     }
-  }, [selectedScheduleId, date]);
+  }, [selectedScheduleId, date, isStudent]);
+
+  const fetchStudentAttendance = async () => {
+    setLoading(true);
+    try {
+      const res = await axios.get('/api/attendance');
+      setStudentRecords(res.data);
+    } catch (err) {
+      console.error('Error fetching student attendance', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchSchedules = async () => {
     try {
       const res = await axios.get('/api/schedules');
-      console.log('Fetched schedules:', res.data);
       setSchedules(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error('Error fetching schedules', err);
@@ -91,6 +109,58 @@ export default function Attendance() {
       setLoading(false);
     }
   };
+
+  if (isStudent) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-900 tracking-tight">My Attendance History</h1>
+          <p className="text-slate-500 font-medium">Tracking your presence across all registered courses</p>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm shadow-slate-200/50">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-slate-50/50">
+                <th className="px-6 py-4 text-left text-[11px] font-black text-slate-400 uppercase tracking-widest">Date</th>
+                <th className="px-6 py-4 text-left text-[11px] font-black text-slate-400 uppercase tracking-widest">Course</th>
+                <th className="px-6 py-4 text-center text-[11px] font-black text-slate-400 uppercase tracking-widest">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {studentRecords.length > 0 ? (
+                studentRecords.map((record) => (
+                  <tr key={record.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-6 py-4 text-sm font-bold text-slate-600">
+                      {format(new Date(record.date), 'MMM dd, yyyy')}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm font-bold text-slate-700">{record.enrollment.schedule.course.name}</div>
+                      <div className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">{record.enrollment.schedule.dayOfWeek}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex justify-center">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border 
+                          ${record.status === 'PRESENT' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 
+                            record.status === 'ABSENT' ? 'bg-rose-50 text-rose-600 border-rose-100' : 
+                            'bg-amber-50 text-amber-600 border-amber-100'}`}>
+                          {record.status}
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={3} className="px-6 py-20 text-center text-slate-400 font-bold">No attendance records found yet.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
 
   const updateStatus = (enrollmentId: number, status: AttendanceRecord['status']) => {
     setRecords(prev => prev.map(r => r.enrollmentId === enrollmentId ? { ...r, status } : r));

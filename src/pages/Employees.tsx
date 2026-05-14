@@ -200,8 +200,8 @@ export default function Employees() {
 
       <Modal 
         isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        title="Add New Employee"
+        onClose={closeModal} 
+        title={editingId ? "Edit Employee" : "Add New Employee"}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
@@ -290,7 +290,7 @@ export default function Employees() {
               />
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-bold text-ui-muted uppercase tracking-wider">Department</label>
+              <label className="text-xs font-bold text-ui-muted uppercase tracking-wider">Department (Optional)</label>
               <select 
                 name="departmentId"
                 value={formData.departmentId}
@@ -309,7 +309,7 @@ export default function Employees() {
             disabled={submitting}
             className="w-full py-3 bg-brand-pink text-white rounded-xl font-bold hover:bg-brand-pink/90 transition-all flex items-center justify-center gap-2"
           >
-            {submitting ? <Loader2 className="animate-spin" size={20} /> : 'Add Employee'}
+            {submitting ? <Loader2 className="animate-spin" size={20} /> : (editingId ? 'Update Employee' : 'Add Employee')}
           </button>
         </form>
       </Modal>

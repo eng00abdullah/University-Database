@@ -8,8 +8,8 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("PRISMA_DATABASE_URL")
 }
 
 model User {
@@ -46,7 +46,7 @@ model Employee {
   staffType     String     // TEACHER, ADMIN, HELP
   salary        Float
   departmentId  Int?
-  department    Department? @relation("DepartmentEmployees", fields: [departmentId], references: [id], onDelete: Cascade)
+  department    Department? @relation("DepartmentEmployees", fields: [departmentId], references: [id], onDelete: SetNull)
   userId        Int?       @unique
   user          User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -65,7 +65,7 @@ model Student {
   enrollmentDate  DateTime   @default(now())
   gpa             Float      @default(0.0)
   departmentId    Int?
-  department      Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  department      Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   userId          Int?       @unique
   user          User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -79,7 +79,7 @@ model Course {
   name          String
   creditHours   Int
   departmentId  Int?
-  department    Department? @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  department    Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
 
   schedules     Schedule[]
 }
@@ -175,6 +175,21 @@ model Scholarship {
   student         Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
 }
 
+model Order {
+  id          Int      @id @default(autoincrement())
+  email       String
+  fullName    String
+  address     String
+  city        String
+  country     String
+  postalCode  String
+  amount      Float
+  status      String   @default("PENDING") // PENDING, PAID, SHIPPED, CANCELLED
+  items       String?  // JSON string of items if needed, or separate model
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model Attendance {
   id            Int        @id @default(autoincrement())
   date          DateTime
@@ -182,4 +197,6 @@ model Attendance {
   enrollmentId  Int
 
   enrollment    Enrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+
+  @@unique([enrollmentId, date])
 }

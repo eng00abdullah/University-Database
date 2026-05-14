@@ -21,10 +21,13 @@ import { motion } from 'motion/react';
 import axios from 'axios';
 import Modal from '../components/Modal';
 
-export default function Schedules() {
+export default function Schedules({ user }: { user: any }) {
   const [schedules, setSchedules] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'timetable' | 'list'>('timetable');
+
+  const isAdminOrDean = ["ADMIN", "DEAN", "ADMISSION"].includes(user?.role);
+  const isStudent = user?.role === 'STUDENT';
 
   // Column visibility state
   const [visibleColumns, setVisibleColumns] = useState({
@@ -67,18 +70,21 @@ export default function Schedules() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [user?.role]);
 
   const fetchData = async () => {
     try {
-      const [schRes, crsRes, empRes, rmsRes, semRes, deptRes] = await Promise.all([
+      const requests = [
         axios.get('/api/schedules'),
         axios.get('/api/courses'),
-        axios.get('/api/employees'),
-        axios.get('/api/rooms'),
+        // Conditional fetches based on role
+        isAdminOrDean ? axios.get('/api/employees') : Promise.resolve({ data: [] }),
+        (isAdminOrDean || user?.role === 'TEACHER') ? axios.get('/api/rooms') : Promise.resolve({ data: [] }),
         axios.get('/api/semesters'),
         axios.get('/api/departments')
-      ]);
+      ];
+
+      const [schRes, crsRes, empRes, rmsRes, semRes, deptRes] = await Promise.all(requests);
       setSchedules(Array.isArray(schRes.data) ? schRes.data : []);
       setCourses(Array.isArray(crsRes.data) ? crsRes.data : []);
       setEmployees(Array.isArray(empRes.data) ? empRes.data : []);
@@ -269,13 +275,15 @@ export default function Schedules() {
             <FileText size={16} className="text-brand-pink" />
             Export
           </button>
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 px-5 py-2.5 bg-brand-pink text-white rounded-xl text-sm font-bold hover:bg-brand-pink/90 shadow-lg shadow-brand-pink/20 transition-all active:scale-[0.98]"
-          >
-            <Plus size={18} />
-            Add Slot
-          </button>
+          {!isStudent && (
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="flex items-center gap-2 px-5 py-2.5 bg-brand-pink text-white rounded-xl text-sm font-bold hover:bg-brand-pink/90 shadow-lg shadow-brand-pink/20 transition-all active:scale-[0.98]"
+            >
+              <Plus size={18} />
+              Add Slot
+            </button>
+          )}
         </div>
       </div>
 
@@ -449,12 +457,14 @@ export default function Schedules() {
                           <h5 className="text-[11px] font-bold text-ui-text line-clamp-1 group-hover:text-brand-pink transition-colors shrink-0 max-w-[80%]">
                             {slot.course?.name}
                           </h5>
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); handleDelete(slot.id); }}
-                            className="p-1 opacity-0 group-hover:opacity-100 text-ui-muted hover:text-red-600 transition-all"
-                          >
-                            <Trash2 size={12} />
-                          </button>
+                          {isAdminOrDean && (
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleDelete(slot.id); }}
+                              className="p-1 opacity-0 group-hover:opacity-100 text-ui-muted hover:text-red-600 transition-all"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          )}
                         </div>
                         <div className="space-y-1.5">
                            <div className="flex items-center gap-1.5 text-[9px] text-ui-muted font-bold uppercase tracking-wider">
@@ -539,12 +549,14 @@ export default function Schedules() {
                       </td>
                     )}
                     <td className="px-6 py-4 text-right">
-                      <button 
-                        onClick={() => handleDelete(slot.id)}
-                        className="p-1.5 text-ui-muted hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      {isAdminOrDean && (
+                        <button 
+                          onClick={() => handleDelete(slot.id)}
+                          className="p-1.5 text-ui-muted hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

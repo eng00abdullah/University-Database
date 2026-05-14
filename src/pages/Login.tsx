@@ -19,28 +19,20 @@ export default function Login({ onLogin }: LoginProps) {
     setLoading(true);
     setError('');
 
+    // Remove domain restriction to allow seeded accounts
+    /*
     if (!email.toLowerCase().endsWith('@iu.edu.eg')) {
       setError('Please use an email ending with @iu.edu.eg');
       setLoading(false);
       return;
     }
+    */
     
     try {
       const response = await axios.post('/api/auth/login', { email, password });
       onLogin(response.data);
     } catch (err: any) {
-      // Allow login with any credentials if backend fails
-      onLogin({
-        token: `mock-session-${Date.now()}`,
-        user: {
-          id: 'guest',
-          email: email,
-          firstName: email.split('@')[0] || 'Guest',
-          lastName: 'User',
-          role: 'ADMIN',
-          staffType: 'ACADEMIC'
-        }
-      });
+      setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
     } finally {
       setLoading(false);
     }

@@ -14,6 +14,7 @@ import Reports from './pages/Reports';
 import Attendance from './pages/Attendance';
 import Finance from './pages/Finance';
 import Scholarships from './pages/Scholarships';
+import Checkout from './pages/Checkout';
 import BlankPage from './pages/BlankPage';
 
 export default function App() {
@@ -46,16 +47,17 @@ export default function App() {
           <Header user={user} />
           <main className="flex-1 overflow-y-auto p-6">
             <Routes>
-              <Route path="/" element={<Dashboard />} />
+              <Route path="/" element={<Dashboard user={user} />} />
               <Route path="/students" element={<Students />} />
               <Route path="/employees" element={<Employees />} />
               <Route path="/departments" element={<Departments />} />
               <Route path="/courses" element={<Courses />} />
-              <Route path="/schedules" element={<Schedules />} />
+              <Route path="/schedules" element={<Schedules user={user} />} />
               <Route path="/reports" element={<Reports />} />
-              <Route path="/attendance" element={<Attendance />} />
-              <Route path="/fees" element={<Finance />} />
+              <Route path="/attendance" element={<Attendance user={user} />} />
+              <Route path="/fees" element={<Finance user={user} />} />
               <Route path="/scholarships" element={<Scholarships />} />
+              <Route path="/checkout" element={<Checkout />} />
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
           </main>

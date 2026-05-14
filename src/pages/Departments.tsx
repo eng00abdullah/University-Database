@@ -167,8 +167,8 @@ export default function Departments() {
 
       <Modal 
         isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        title="Create New Department"
+        onClose={closeModal} 
+        title={editingId ? "Edit Department" : "Create New Department"}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
@@ -201,7 +201,7 @@ export default function Departments() {
             disabled={submitting}
             className="w-full py-3 bg-brand-pink text-white rounded-xl font-bold hover:bg-brand-pink/90 transition-all flex items-center justify-center gap-2"
           >
-            {submitting ? <Loader2 className="animate-spin" size={20} /> : 'Create Department'}
+            {submitting ? <Loader2 className="animate-spin" size={20} /> : (editingId ? 'Update Department' : 'Create Department')}
           </button>
         </form>
       </Modal>

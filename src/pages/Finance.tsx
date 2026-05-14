@@ -32,7 +32,7 @@ interface Fee {
   semester: Semester;
 }
 
-export default function Finance() {
+export default function Finance({ user }: { user: any }) {
   const [fees, setFees] = useState<Fee[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [semesters, setSemesters] = useState<Semester[]>([]);
@@ -40,6 +40,8 @@ export default function Finance() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingFee, setEditingFee] = useState<Fee | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+
+  const isStudent = user?.role === 'STUDENT';
 
   const [formData, setFormData] = useState({
     studentId: '',
@@ -52,13 +54,13 @@ export default function Finance() {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [isStudent]);
 
   const fetchData = async () => {
     try {
       const [feesRes, studentsRes, semestersRes] = await Promise.all([
         axios.get('/api/fees'),
-        axios.get('/api/students'),
+        !isStudent ? axios.get('/api/students') : Promise.resolve({ data: [] }),
         axios.get('/api/semesters')
       ]);
       setFees(Array.isArray(feesRes.data) ? feesRes.data : []);
@@ -151,13 +153,15 @@ export default function Finance() {
           <button className="p-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-all shadow-sm">
             <Download className="w-5 h-5" />
           </button>
-          <button 
-            onClick={() => handleOpenModal()}
-            className="flex items-center gap-2 px-5 py-2.5 bg-brand-blue text-white rounded-xl text-sm font-bold hover:bg-brand-blue/90 shadow-lg shadow-brand-blue/10 transition-all"
-          >
-            <Plus className="w-4 h-4" />
-            Issue New Invoice
-          </button>
+          {!isStudent && (
+            <button 
+              onClick={() => handleOpenModal()}
+              className="flex items-center gap-2 px-5 py-2.5 bg-brand-blue text-white rounded-xl text-sm font-bold hover:bg-brand-blue/90 shadow-lg shadow-brand-blue/10 transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              Issue New Invoice
+            </button>
+          )}
         </div>
       </div>
 
@@ -260,18 +264,28 @@ export default function Finance() {
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <button 
-                        onClick={() => handleOpenModal(fee)}
-                        className="p-2 text-slate-400 hover:text-brand-blue hover:bg-brand-blue/5 rounded-lg transition-all"
-                      >
-                        <Edit3 className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(fee.id)}
-                        className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {!isStudent && (
+                        <>
+                          <button 
+                            onClick={() => handleOpenModal(fee)}
+                            className="p-2 text-slate-400 hover:text-brand-blue hover:bg-brand-blue/5 rounded-lg transition-all"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+                          <button 
+                            onClick={() => handleDelete(fee.id)}
+                            className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                      {isStudent && (
+                        <button className="p-2 text-brand-blue hover:bg-brand-blue/5 rounded-lg transition-all flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest">
+                          <Download className="w-3.5 h-3.5" />
+                          Receipt
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
