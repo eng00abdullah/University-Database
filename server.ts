@@ -183,7 +183,7 @@ async function startServer() {
   app.get("/api/employees", authenticate, authorize(["ADMIN", "DEAN"]), async (req, res) => {
     try {
       const employees = await prisma.employee.findMany({
-        include: { department: true },
+        include: { department: true, user: true },
       });
       res.json(employees);
     } catch (error: any) {
@@ -194,15 +194,36 @@ async function startServer() {
 
   app.post("/api/employees", authenticate, authorize(["ADMIN"]), async (req, res) => {
     try {
-      const { departmentId, ...rest } = req.body;
-      const employee = await prisma.employee.create({
-        data: {
-          ...rest,
-          salary: parseFloat(rest.salary || "0"),
-          departmentId: departmentId ? parseInt(departmentId) : null,
-          hireDate: rest.hireDate ? new Date(rest.hireDate) : new Date(),
-        },
+      const { departmentId, role, ...rest } = req.body;
+      
+      const employee = await prisma.$transaction(async (tx) => {
+        // 1. Create a User if role is provided
+        let userId = null;
+        if (role) {
+          const hashedPassword = await bcrypt.hash("password123", 10);
+          const user = await tx.user.create({
+            data: {
+              email: rest.email,
+              password: hashedPassword,
+              role: role || "EMPLOYEE",
+            }
+          });
+          userId = user.id;
+        }
+
+        // 2. Create the Employee
+        return tx.employee.create({
+          data: {
+            ...rest,
+            salary: parseFloat(rest.salary || "0"),
+            departmentId: departmentId ? parseInt(departmentId) : null,
+            hireDate: rest.hireDate ? new Date(rest.hireDate) : new Date(),
+            userId
+          },
+          include: { department: true, user: true }
+        });
       });
+
       res.json(employee);
     } catch (error: any) {
       console.error("Create employee error:", error);
@@ -637,15 +658,46 @@ async function startServer() {
 
   app.put("/api/employees/:id", authenticate, authorize(["ADMIN", "DEAN"]), async (req, res) => {
     try {
-      const { departmentId, ...rest } = req.body;
-      const employee = await prisma.employee.update({
-        where: { id: parseInt(req.params.id) },
-        data: {
-          ...rest,
-          salary: parseFloat(rest.salary),
-          departmentId: departmentId ? parseInt(departmentId) : null,
-        },
+      const { departmentId, role, ...rest } = req.body;
+      const id = parseInt(req.params.id);
+
+      const employee = await prisma.$transaction(async (tx) => {
+        const existingEmp = await tx.employee.findUnique({ where: { id }, include: { user: true } });
+        if (!existingEmp) throw new Error("Employee not found");
+
+        // Update User role if user exists
+        if (existingEmp.userId && role) {
+          await tx.user.update({
+            where: { id: existingEmp.userId },
+            data: { role }
+          });
+        } else if (!existingEmp.userId && role) {
+          // Create user if it doesn't exist but role is now provided
+          const hashedPassword = await bcrypt.hash("password123", 10);
+          const newUser = await tx.user.create({
+            data: {
+              email: existingEmp.email,
+              password: hashedPassword,
+              role: role
+            }
+          });
+          await tx.employee.update({
+            where: { id },
+            data: { userId: newUser.id }
+          });
+        }
+
+        return tx.employee.update({
+          where: { id },
+          data: {
+            ...rest,
+            salary: parseFloat(rest.salary),
+            departmentId: departmentId ? parseInt(departmentId) : null,
+          },
+          include: { department: true, user: true }
+        });
       });
+
       res.json(employee);
     } catch (error: any) {
       res.status(400).json({ message: error.message });

@@ -36,7 +36,8 @@ export default function Employees() {
     jobTitle: '',
     staffType: 'ACADEMIC',
     salary: '',
-    departmentId: ''
+    departmentId: '',
+    role: '' // Added for system access
   });
 
   // Column visibility state
@@ -112,7 +113,8 @@ export default function Employees() {
       jobTitle: emp.jobTitle,
       staffType: emp.staffType,
       salary: emp.salary.toString(),
-      departmentId: emp.departmentId?.toString() || ''
+      departmentId: emp.departmentId?.toString() || '',
+      role: emp.user?.role || ''
     });
     setIsModalOpen(true);
   };
@@ -128,7 +130,8 @@ export default function Employees() {
       jobTitle: '',
       staffType: 'ACADEMIC',
       salary: '',
-      departmentId: ''
+      departmentId: '',
+      role: ''
     });
   };
 
@@ -290,6 +293,24 @@ export default function Employees() {
               />
             </div>
             <div className="space-y-1">
+              <label className="text-xs font-bold text-ui-muted uppercase tracking-wider">System Role (App Access)</label>
+              <select 
+                name="role"
+                value={formData.role}
+                onChange={handleInputChange}
+                className="w-full px-4 py-2 bg-ui-bg border border-ui-border rounded-xl text-sm focus:ring-2 focus:ring-brand-pink/10 outline-none"
+              >
+                <option value="">No System Access</option>
+                <option value="ADMIN">ADMIN (Full Access)</option>
+                <option value="ADMISSION">ADMISSION (Registrar)</option>
+                <option value="DEAN">DEAN (Dept Head)</option>
+                <option value="TEACHER">TEACHER (Faculty)</option>
+                <option value="EMPLOYEE">EMPLOYEE (Basic)</option>
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-4">
+            <div className="space-y-1">
               <label className="text-xs font-bold text-ui-muted uppercase tracking-wider">Department (Optional)</label>
               <select 
                 name="departmentId"
@@ -399,8 +420,15 @@ export default function Employees() {
                   )}
                   {visibleColumns.titleType && (
                     <td className="px-6 py-4">
-                      <div>
-                        <p className="text-sm font-semibold text-ui-text">{emp.jobTitle}</p>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                           <p className="text-sm font-semibold text-ui-text">{emp.jobTitle}</p>
+                           {emp.user?.role && (
+                             <span className="px-1.5 py-0.5 bg-brand-pink/10 text-brand-pink text-[9px] font-bold rounded shadow-sm border border-brand-pink/20 uppercase">
+                               {emp.user.role}
+                             </span>
+                           )}
+                        </div>
                         <p className="text-[10px] font-bold text-brand-blue uppercase tracking-wider">{emp.staffType}</p>
                       </div>
                     </td>
